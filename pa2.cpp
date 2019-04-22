@@ -1,277 +1,269 @@
-#include "pa2.h"
+#include "pa2.hpp"
 #include <iostream>
+#include <utility>
 #include <limits>
 #include <cmath>
 
-// organize chunk of pages that belong to a program
-// start and end bounds are exclusive
-Chunk::Chunk(std::string name, int startBound, int endBound) {
-    startPage = startBound;
-    endPage = endBound;
-    programName = std::move(name);
+Chunk::Chunk(std::string program_name, int start_page, int endPage): program_name(std::move(program_name)),
+                                                                   start_page(start_page), end_page(endPage) {}
+
+const int Chunk::getSize() const {
+    return end_page - start_page + 1;
 }
 
-int Chunk::getStartPage() {
-    return startPage;
+const std::string &Chunk::getProgramName() const {
+    return program_name;
 }
 
-int Chunk::getEndPage() {
-    return endPage;
+std::string Chunk::copyProgramName() const {
+    return program_name;
 }
 
-void Chunk::setStartPage(int page) {
-    startPage = page;
+const int& Chunk::getStartPage() const {
+    return start_page;
 }
 
-void Chunk::setEndPage(int page) {
-    endPage = page;
+const int& Chunk::getEndPage() const {
+    return end_page;
 }
 
-std::string Chunk::getProgramName() {
-    return programName;
+void Chunk::setStartPage(int start_page) {
+    this->start_page = start_page;
 }
 
-// start and end pages are exclusive
-int Chunk::getSize() {
-    return endPage - startPage - 1;
+void Chunk::setEndPage(int end_page) {
+    this->end_page = end_page;
 }
 
-// shift the starting page in a chunk in memory by a certain number
-void Chunk::split(int size) {
-    startPage += size;
+void Chunk::split(const int& size) {
+    start_page += size;
 }
 
-// print out the programs in 8 column rows
-void Chunk::print() {
-    for(int i = 1; i < endPage; ++i) {
-        std::cout << programName;
-        if(i % 8 == 0) {
-            std::cout << std::endl;
-        } else if (i != endPage - 1){
-            std::cout << '\t';
-        }
+std::ostream &operator<<(std::ostream &os, const Chunk &chunk) {
+    for(int i = 0; i < chunk.getSize() - 1; ++i) {
+        os << chunk.program_name << ',';
     }
+    os << chunk.program_name;
+    return os;
 }
 
-// represent pages with strings that are their names
-OperatingSystem::OperatingSystem(std::string algorithmChosen) {
-    this->algorithmChosen = std::move(algorithmChosen);
-    usedSpace = LinkedList();
-    freeSpace = LinkedList();
-    // create one initial node in the free memory containing all the free space
-    // leave used memory empty
-    freeSpace.append(Chunk("Free", 0, 33));
-}
-
-// check if list of active programs contains program of interest
-bool OperatingSystem::containsProgram(std::string programName) {
-    for(const std::string& program : programsList) {
-        if(program == programName) {
-            return true;
-        }
+OperatingSystem::OperatingSystem(const std::string& algorithm_chosen) {
+    if(algorithm_chosen == "best") {
+        algorithm = best;
+    } else {
+        algorithm = worst;
     }
-    return false;
+    free_space.append(Chunk("Free", 1, 32));
+    memory_pages.reserve(32);
 }
 
-// best fit: find smallest hole that can fit the program size
-// worst fit: find largest hole overall
-// 4 KB per page
-void OperatingSystem::addProgram(std::string programName, int programSize) {
-    // make sure program isn't already running
-    if(containsProgram(programName)) {
-        std::cout << "Error, program " << programName << " already running.";
+bool OperatingSystem::containsProgram(const std::string& program_name) const {
+    // check if OS is already running the program with this name
+    return active_programs.count(program_name) != 0;
+}
+
+void OperatingSystem::addProgram(std::string program_name, int program_size) {
+    // check if program is already running
+    if(containsProgram(program_name)) {
+        std::cout << "Error, program " << program_name << " already running.";
         return;
     }
 
-    // number of total pages needed is the ceiling of the program size divided by 4
-    auto numPages = (int) ceil((double) programSize / 4.0);
-
-    int pageIndex = -1;
-    // use worst or best case algorithm
-    if(algorithmChosen == "worst") {
-        // find free space chunk with most size
-        int tempSize;
-        // max size can't be anything smaller than 0
-        int maxSize = 0;
-        for(int i = 0; i < freeSpace.getSize(); ++i) {
-            tempSize = 4 * freeSpace.get(i).getSize();
-            if (tempSize > maxSize && tempSize >= programSize) {
-                maxSize = tempSize;
-                pageIndex = i;
+    int page_index = -1;
+    int current_size;
+    switch(algorithm) {
+        // find free space chunk with largest size
+        case worst: {
+            // max size can't be smaller than nothing
+            int max_size = 0;
+            for (int i = 0; i < free_space.getSize(); ++i) {
+                current_size = 4 * free_space.get(i).getSize();
+                if (current_size > max_size && current_size >= program_size) {
+                    max_size = current_size;
+                    page_index = i;
+                }
             }
         }
-        // no chunk has enough memory
-        if(pageIndex < 0) {
-            std::cout << "Error, not enough memory for Program " << programName;
-            return;
-        }
-    } else {
-        // find free space chunk with smallest size that fits the program size
-        int tempSize;
-        // minimum size can't be any larger than the OS size
-        int minSize = 129;
-        for(int i = 0; i < freeSpace.getSize(); ++i) {
-            tempSize = 4 * freeSpace.get(i).getSize();
-            if(tempSize >= programSize && tempSize < minSize && tempSize >= programSize) {
-                minSize = tempSize;
-                pageIndex = i;
+            break;
+        // find free space chunk with smallest size that fits program size
+        case best: {
+            // minimum size can't be larger than the OS size
+            int min_size = 129;
+            for (int i = 0; i < free_space.getSize(); ++i) {
+                current_size = 4 * free_space.get(i).getSize();
+                if (current_size < min_size && current_size >= program_size) {
+                    min_size = current_size;
+                    page_index = i;
+                }
             }
         }
-        // no chunk has enough memory
-        if(pageIndex < 0) {
-            std::cout << "Error, not enough memory for Program " << programName;
-            return;
-        }
+            break;
+    }
+    // if no chunk has enough memory
+    if(page_index < 0) {
+        std::cout << "Error, not enough memory for Program " << program_name;
+        return;
     }
 
+    // total num pages = program size / 4 KB
+    auto num_pages = (int) ceil((double) program_size / 4.0);
     // get the target chunk and create a chunk in used memory
-    // shift the starting index of the chunk if free memory by the number of pagegs
-    Chunk targetChunk = freeSpace.get(pageIndex);
-    Chunk* usedMemChunk = new Chunk(programName, targetChunk.getStartPage(), targetChunk.getStartPage() + numPages + 1);
-    freeSpace.get(pageIndex).split(numPages);
+    // shift the starting index of the chunk in free memory by the number of pages
+    const Chunk& target_chunk = free_space.get(page_index);
+    Chunk used_mem_chunk = Chunk(program_name, target_chunk.getStartPage(), target_chunk.getStartPage() + num_pages - 1);
+    free_space.at(page_index).split(num_pages);
 
     // insert chunk in used space in order by comparing start pages
-    // if used memory is empty simply append it with a chunk as its head node
-    if(usedSpace.getSize() == 0) {
-        usedSpace.append(*usedMemChunk);
-    } else if(usedSpace.getSize() == 1) {
-        // if single chunk start page is greater than reclaimed start page, insert reclaimed chunk at front
-        if(usedSpace.get(0).getStartPage() > usedMemChunk->getStartPage()) {
-            usedSpace.insert(0, *usedMemChunk);
-            // else add reclaimed chunk after the head node
-        } else {
-            usedSpace.append(*usedMemChunk);
-        }
-    }
-        // else find best position in list
-    else {
-        int usedIndex;
-        for (usedIndex = 1; usedIndex < usedSpace.getSize(); ++usedIndex) {
-            if (usedSpace.get(usedIndex).getStartPage() < usedMemChunk->getStartPage()) {
-                usedSpace.insert(usedIndex, *usedMemChunk);
-                break;
+    switch (used_space.getSize()) {
+        // if used memory is empty then append it with a chunk as its head node
+        case 0:
+            used_space.append(used_mem_chunk);
+            break;
+        case 1:
+            if(used_space.get(0).getStartPage() > used_mem_chunk.getStartPage()) {
+                // if single chunk start page is greater than reclaimed start page, insert reclaimed chunk at front
+                used_space.append(used_mem_chunk);
+            } else {
+                // else add the reclaimed chunk after the head node
+                used_space.insert(1, used_mem_chunk);
             }
-        }
+            break;
+        default:
+            // else find best position in list
+            for(int used_index = 1; used_index < used_space.getSize(); ++used_index) {
+                if(used_space.get(used_index).getStartPage() < used_mem_chunk.getStartPage()) {
+                    used_space.insert(used_index + 1, used_mem_chunk);
+                    break;
+                }
+            }
+            break;
     }
 
-    // add program name to list of programs actively being used by the OS
-    programsList.push_front(programName);
-    std::cout << "Program " << programName << " added successfully: " << numPages << " page(s) used" << std::endl;
+    // add program to active programs list
+    active_programs.insert(program_name);
+    std::cout << "Program " << program_name << " added successfully: " << num_pages << " page(s) used." << std::endl;
 }
 
-// first check if program is present in used memory, if not, exit
-// if present, remove chunk from used memory and reclaim in free memory
-void OperatingSystem::removeProgram(std::string programName) {
-    // make sure the program is present
-    if(!containsProgram(programName)) {
-        std::cout << "Error, program " << programName << " is not running" << std::endl;
-        return;
-    }
-
-    // find index in the used memory where the target chunks occurs
-    int usedIndex = 0;
-    while(usedIndex < usedSpace.getSize() && usedSpace.get(usedIndex).getProgramName() != programName) {
-        ++usedIndex;
-    }
-
-    // get your target chunk
-    // create a new chunk for free memory using reclaimed used memory properties
-    Chunk targetChunk = usedSpace.get(usedIndex);
-    int numPagesReclaimed = targetChunk.getSize();
-    Chunk reclaimedMemory("Free", targetChunk.getStartPage(), targetChunk.getEndPage());
-
-    //insert reclaimed memory back into free memory to maintain order
-    int freeIndex;
-    bool compareAdjacent;
-    // if free space is empty add a head to the free space with the chunk
-    if(freeSpace.getSize() == 0) {
-        freeSpace.append(reclaimedMemory);
-        compareAdjacent = false;
-        // if size is 1 compare reclaimed memory to the head (and only) chunk
-    } else if(freeSpace.getSize() == 1) {
-        // if single chunk start page is greater than reclaimed start page, insert reclaimed chunk at front
-        if(freeSpace.get(0).getStartPage() > reclaimedMemory.getStartPage()) {
-            freeSpace.insert(0, reclaimedMemory);
-            // else add reclaimed chunk after the head node
-        } else {
-            freeSpace.append(reclaimedMemory);
+void OperatingSystem::removeProgram(const std::string &program_name) {
+    // check if program is active
+    if(containsProgram(program_name)) {
+        int used_chunk_index = 0;
+        while (used_chunk_index < used_space.getSize() &&
+               used_space.get(used_chunk_index).getProgramName() != program_name) {
+            ++used_chunk_index;
         }
-        compareAdjacent = false;
-        // otherwise find best position if the size is greater than 1
+
+        // get index of target chunk in used memory
+        const Chunk& used_chunk = used_space.get(used_chunk_index);
+        Chunk reclaimed_memory("Free", used_chunk.getStartPage(), used_chunk.getEndPage());
+
+        if(free_space.isEmpty()) {
+            // if there's no free space, simply create the free space head with the chunk
+            free_space.append(reclaimed_memory);
+        } else if(free_space.getSize() == 1) {
+            // if the size is 1 compare the reclaimed memory to the head
+            if(free_space.get(0).getStartPage() > reclaimed_memory.getStartPage()) {
+                free_space.prepend(reclaimed_memory);
+            } else {
+                free_space.append(reclaimed_memory);
+            }
+        } else {
+            // otherwise find the best position
+            int free_chunk_index;
+            for(free_chunk_index = 1; free_chunk_index < free_space.getSize(); ++free_chunk_index) {
+                if(free_space.get(free_chunk_index).getStartPage() < reclaimed_memory.getStartPage()) {
+                    free_space.insert(free_chunk_index, reclaimed_memory);
+                    break;
+                }
+            }
+            bool merged = false;
+            Chunk& old_free_chunk = free_space.at(free_chunk_index);
+            const Chunk& new_free_chunk = free_space.get(free_chunk_index - 1);
+            // check if start page of the original free memory and end page of the reclaimed memory line up
+            if(old_free_chunk.getStartPage() == new_free_chunk.getEndPage() + 1) {
+                // merge at the start, replacing original chunk starting point with the new chunk starting point
+                old_free_chunk.setStartPage(new_free_chunk.getStartPage());
+                merged = true;
+            } else if (new_free_chunk.getEndPage() + 1 == old_free_chunk.getStartPage()) {
+                // merge at the end, replacing original chunk end point with the new chunk end point
+                old_free_chunk.setEndPage(new_free_chunk.getEndPage());
+                merged = true;
+            }
+            // if we merged two chunks we can delete the new chunk as the pages were absorbed by the old chunk
+            if(merged) {
+                free_space.remove(free_chunk_index - 1);
+            }
+        }
+
+        int num_pages_reclaimed = used_chunk.getSize();
+        used_space.remove(used_chunk_index);
+        active_programs.erase(program_name);
+        std::cout << "Program " << program_name << " successfully killed, " << num_pages_reclaimed <<
+                  " page(s) reclaimed." << std::endl;
     } else {
-        for (freeIndex = 1; freeIndex < freeSpace.getSize(); ++freeIndex) {
-            if (freeSpace.get(freeIndex).getStartPage() < reclaimedMemory.getStartPage()) {
-                freeSpace.insert(freeIndex, reclaimedMemory);
-                continue;
-            }
-        }
-        // we didn't already compare adjacent chunks so we must do so now
-        compareAdjacent = true;
+        std::cout << "Error, program " << program_name << " is not running." << std::endl;
     }
-
-    // if it's possible/appropriate to compare adjacent chunks in free mem, do so
-    if(compareAdjacent) {
-        bool merged = false;
-        Chunk& originalFree = freeSpace.get(freeIndex);
-        Chunk newFree = freeSpace.get(freeIndex - 1);
-        // check if end page and start pages of the reclaimed memory and the original free memory chunk line up,
-        // if so, merge the two chunk start/end pages to create one contiguous chunk
-        if (originalFree.getStartPage() == newFree.getEndPage() + 1) {
-            // merge at the start, replace original chunk starting point with new chunk starting point
-            originalFree.setStartPage(newFree.getStartPage());
-            merged = true;
-        } else if (newFree.getEndPage() + 1 == originalFree.getStartPage()) {
-            // merge at the end, replace original chunk end point with new chunk end point
-            originalFree.setEndPage(newFree.getEndPage());
-            merged = true;
-        }
-        // if we merged two chunks delete the new chunk as it pages were absorbed by the old chunk
-        if(merged) {
-            freeSpace.remove(freeIndex - 1);
-        }
-    }
-
-    // remove chunk from used memory
-    // remove program name from list of active programs
-    usedSpace.remove(usedIndex);
-    programsList.remove(programName);
-    std::cout << "Program " << programName << " successfully killed, "
-              << numPagesReclaimed << " page(s) reclaimed" << std::endl;
 }
 
-// a fragment is a set of contiguous pages that are uninterrupted by free space
-// therefore the number of fragments is the number of nodes in the free memory
-// adjacent pages merge together
-int OperatingSystem::getNumFragments() {
-    return freeSpace.getSize();
+const int OperatingSystem::getNumFragments() const {
+    // a fragment is a set of contiguous pages uninterrupted by free space
+    return free_space.getSize();
 }
 
-// for each page in the OS, print the program name if occupied or else 'Free'
-// OS size is 32, print out 4 rows and 8 columns
 void OperatingSystem::print() {
-    // start at an index of 0
-    // if index is in range of used memory and the start page of the chunk at the index of used memory,
-    // then print out each page in the chunk using its program name and set index to next start page
-    // else increment index and print out 'Free"
-    int index = 0;
-    while(index < 32) {
-        if(index < usedSpace.getSize() && usedSpace.get(index).getStartPage() == index) {
-            usedSpace.get(index).print();
-            index = usedSpace.get(index).getEndPage() - 1;
-        } else {
-            ++index;
-            std::cout << "Free";
+    // reset all page values to 'Free'
+    memory_pages.assign(32, "Free");
+    for(int i = 0; i < used_space.getSize(); ++i) {
+        // loop through every used memory chunk
+        const Chunk& chunk = used_space.get(i);
+        for(int j = chunk.getStartPage(); j <= chunk.getEndPage(); ++j) {
+            // assign each page name to its corresponding page index(es)
+            memory_pages[j-1] = chunk.copyProgramName();
         }
-        // start a new line if the 8th column is reached, else print out whitespace
-        if (index % 8 == 0) {
+    }
+    int display_index = 1;
+    for(const auto& program : memory_pages) {
+        std::cout << program;
+        if(display_index % 8 == 0) {
             std::cout << std::endl;
         } else {
             std::cout << '\t';
         }
+        ++display_index;
     }
 }
 
-// print menu
+std::string defineProgramName() {
+    std::string program_name;
+    while((std::cout << "Program name - " && !(std::cin >> program_name)) || program_name == "Free") {
+        std::cout << "Error: bad input, program name cannot be 'Free'" << std::endl;
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    return program_name;
+}
+
+int defineProgramSize() {
+    int program_size;
+    while((std::cout << "Program size (KB) - " && !(std::cin >> program_size)) || program_size <= 0) {
+        std::cout << "Error: bad input, enter a size greater than 0" << std::endl;
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    return program_size;
+}
+
+std::string defineAlgorithmName() {
+    std::string algorithm_name;
+    std::cout << "Specify fit algorithm as 'best' or 'worst': ";
+    std::cin >> algorithm_name;
+    if(algorithm_name != "best" && algorithm_name != "worst") {
+        std::cout << "Error: algorithm must be specified as 'best' for best-fit or 'worst' for worst-fit.";
+        exit(0);
+    }
+    std::cout << std::endl << "Using " << algorithm_name << "-fit algorithm" << std::endl;
+}
+
 void displayUserOptionsMenu() {
     std::cout << std::endl;
     std::cout << "1. Add program" << std::endl;
@@ -282,8 +274,7 @@ void displayUserOptionsMenu() {
     std::cout << std::endl;
 }
 
-// get menu choice from user, check for bad input and clear bad input
-int defineChoice() {
+int define_choice() {
     int userChoice;
     while((std::cout << "Choice - " && !(std::cin >> userChoice)) || userChoice < 1 || userChoice > 5) {
         std::cout << "Error: bad input, enter a number 1 - 5" << std::endl;
@@ -294,73 +285,27 @@ int defineChoice() {
     return userChoice;
 }
 
-// get program name from user, check for and clear bad input
-std::string defineProgramName() {
-    std::string programName;
-    while((std::cout << "Program name - " && !(std::cin >> programName)) || programName == "Free") {
-        std::cout << "Error: bad input, program name cannot be 'Free'" << std::endl;
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    }
-    return programName;
-}
-
-// get program size from user, check for and clear bad input
-int defineProgramSize() {
-    int programSize;
-    while((std::cout << "Program size (KB) - " && !(std::cin >> programSize)) || programSize <= 0) {
-        std::cout << "Error: bad input, enter a size greater than 0" << std::endl;
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    }
-    return programSize;
-}
-
-int main(int argc, char* argv[]) {
-    // end program if user does not correctly specify algorithm in command line
-    std::string algorithmName;
-    if (argc == 2) {
-        algorithmName = argv[1];
-        if (!(algorithmName == "best" || algorithmName == "worst")) {
-            std::cout << "Error: must specify algorithm as 'best' or 'worst' thru command line.";
-            return 0;
-        }
-        std::cout << "Using " << algorithmName << " fit algorithm" << std::endl;
-    } else {
-        std::cout << "Error: must specify algorithm as 'best' or 'worst' thru command line.";
-        return 0;
-    }
-
-    // initialize operating system with user chosen algorithm 'best' or 'worst' and 32 pages
-    OperatingSystem os(algorithmName);
-
+int main() {
+    OperatingSystem OS(defineAlgorithmName());
     while(true) {
         displayUserOptionsMenu();
-        int userChoice = defineChoice();
-        switch (userChoice) {
+        switch(define_choice()) {
             case 1: {
-                std::string programName = defineProgramName();
-                int programSize = defineProgramSize();
-                os.addProgram(programName, programSize);
+                std::string program_name = defineProgramName();
+                OS.addProgram(program_name, defineProgramSize());
             }
                 break;
-            case 2: {
-                std::string programName = defineProgramName();
-                os.removeProgram(programName);
-            }
+            case 2:
+                OS.removeProgram(defineProgramName());
                 break;
-            case 3: {
-                std::cout << "There are " << os.getNumFragments() << " fragment(s)." << std::endl;
-            }
+            case 3:
+                std::cout << "There are " << OS.getNumFragments() << " fragment(s)." << std::endl;
                 break;
-            case 4: {
-                os.print();
-            }
+            case 4:
+                OS.print();
                 break;
-            case 5: {
+            case 5:
                 return 0;
-            }
-            default: break; // should never happen, we already checked to make sure user input was 1 - 5
         }
     }
 }
