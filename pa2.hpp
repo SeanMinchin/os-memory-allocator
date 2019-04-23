@@ -162,7 +162,6 @@ public:
     Chunk(std::string program_name, int start_page, int endPage);
     const int getSize() const;
     const std::string& getProgramName() const;
-    std::string copyProgramName() const;
     const int& getStartPage() const;
     const int& getEndPage() const;
     void setStartPage(int start_page);
@@ -177,15 +176,15 @@ private:
     Algorithm algorithm;
     std::set<std::string> active_programs;
     bool containsProgram(const std::string& program_name) const;
+    std::vector<std::string> memory_pages;
     LinkedList<Chunk> free_space;
     LinkedList<Chunk> used_space;
-    std::vector<std::string> memory_pages;
 public:
     explicit OperatingSystem(const std::string& algorithm_chosen);
     void addProgram(std::string program_name, int program_size);
     void removeProgram(const std::string& program_name);
     const int getNumFragments() const;
-    void print();
+    void print() const;
 };
 
 #endif //OS_MEMORY_ALLOCATOR_PA2_HPP

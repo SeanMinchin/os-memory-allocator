@@ -15,10 +15,6 @@ const std::string &Chunk::getProgramName() const {
     return program_name;
 }
 
-std::string Chunk::copyProgramName() const {
-    return program_name;
-}
-
 const int& Chunk::getStartPage() const {
     return start_page;
 }
@@ -54,7 +50,7 @@ OperatingSystem::OperatingSystem(const std::string& algorithm_chosen) {
         algorithm = worst;
     }
     free_space.append(Chunk("Free", 1, 32));
-    memory_pages.reserve(32);
+    memory_pages.assign(32, "Free");
 }
 
 bool OperatingSystem::containsProgram(const std::string& program_name) const {
@@ -99,49 +95,54 @@ void OperatingSystem::addProgram(std::string program_name, int program_size) {
         }
             break;
     }
-    // if no chunk has enough memory
-    if(page_index < 0) {
-        std::cout << "Error, not enough memory for Program " << program_name;
-        return;
-    }
 
-    // total num pages = program size / 4 KB
-    auto num_pages = (int) ceil((double) program_size / 4.0);
-    // get the target chunk and create a chunk in used memory
-    // shift the starting index of the chunk in free memory by the number of pages
-    const Chunk& target_chunk = free_space.get(page_index);
-    Chunk used_mem_chunk = Chunk(program_name, target_chunk.getStartPage(), target_chunk.getStartPage() + num_pages - 1);
-    free_space.at(page_index).split(num_pages);
+    if(page_index != -1) {
+        // total num pages = program size / 4 KB
+        auto num_pages = (int) ceil((double) program_size / 4.0);
+        // get the target chunk and create a chunk in used memory
+        // shift the starting index of the chunk in free memory by the number of pages
+        const Chunk &target_chunk = free_space.get(page_index);
+        Chunk used_mem_chunk = Chunk(program_name, target_chunk.getStartPage(),
+                                     target_chunk.getStartPage() + num_pages - 1);
+        free_space.at(page_index).split(num_pages);
 
-    // insert chunk in used space in order by comparing start pages
-    switch (used_space.getSize()) {
-        // if used memory is empty then append it with a chunk as its head node
-        case 0:
-            used_space.append(used_mem_chunk);
-            break;
-        case 1:
-            if(used_space.get(0).getStartPage() > used_mem_chunk.getStartPage()) {
-                // if single chunk start page is greater than reclaimed start page, insert reclaimed chunk at front
+        // insert chunk in used space in order by comparing start pages
+        switch (used_space.getSize()) {
+            // if used memory is empty then append it with a chunk as its head node
+            case 0:
                 used_space.append(used_mem_chunk);
-            } else {
-                // else add the reclaimed chunk after the head node
-                used_space.insert(1, used_mem_chunk);
-            }
-            break;
-        default:
-            // else find best position in list
-            for(int used_index = 1; used_index < used_space.getSize(); ++used_index) {
-                if(used_space.get(used_index).getStartPage() < used_mem_chunk.getStartPage()) {
-                    used_space.insert(used_index + 1, used_mem_chunk);
-                    break;
+                break;
+            case 1:
+                if (used_space.get(0).getStartPage() > used_mem_chunk.getStartPage()) {
+                    // if single chunk start page is greater than reclaimed start page, insert reclaimed chunk at front
+                    used_space.append(used_mem_chunk);
+                } else {
+                    // else add the reclaimed chunk after the head node
+                    used_space.insert(1, used_mem_chunk);
                 }
-            }
-            break;
-    }
+                break;
+            default:
+                // else find best position in list
+                for (int used_index = 1; used_index < used_space.getSize(); ++used_index) {
+                    if (used_space.get(used_index).getStartPage() < used_mem_chunk.getStartPage()) {
+                        used_space.insert(used_index + 1, used_mem_chunk);
+                        break;
+                    }
+                }
+                break;
+        }
 
-    // add program to active programs list
-    active_programs.insert(program_name);
-    std::cout << "Program " << program_name << " added successfully: " << num_pages << " page(s) used." << std::endl;
+        // add program to active programs list
+        active_programs.insert(program_name);
+        for(int i = used_mem_chunk.getStartPage(); i <= used_mem_chunk.getEndPage(); ++i) {
+            memory_pages[i-1] = program_name;
+        }
+        std::cout << "Program " << program_name << " added successfully: " << num_pages << " page(s) used."
+                  << std::endl;
+    } else {
+        // if no chunk has enough memory
+        std::cout << "Error, not enough memory for Program " << program_name;
+    }
 }
 
 void OperatingSystem::removeProgram(const std::string &program_name) {
@@ -154,8 +155,12 @@ void OperatingSystem::removeProgram(const std::string &program_name) {
         }
 
         // get index of target chunk in used memory
-        const Chunk& used_chunk = used_space.get(used_chunk_index);
-        Chunk reclaimed_memory("Free", used_chunk.getStartPage(), used_chunk.getEndPage());
+        const Chunk& used_mem_chunk = used_space.get(used_chunk_index);
+        // remove program name from pages display
+        for(int i = used_mem_chunk.getStartPage(); i <= used_mem_chunk.getEndPage(); ++i) {
+            memory_pages[i-1] = "Free";
+        }
+        Chunk reclaimed_memory("Free", used_mem_chunk.getStartPage(), used_mem_chunk.getEndPage());
 
         if(free_space.isEmpty()) {
             // if there's no free space, simply create the free space head with the chunk
@@ -170,7 +175,7 @@ void OperatingSystem::removeProgram(const std::string &program_name) {
         } else {
             // otherwise find the best position
             int free_chunk_index;
-            for(free_chunk_index = 1; free_chunk_index < free_space.getSize(); ++free_chunk_index) {
+            for(free_chunk_index = 0; free_chunk_index < free_space.getSize(); ++free_chunk_index) {
                 if(free_space.get(free_chunk_index).getStartPage() < reclaimed_memory.getStartPage()) {
                     free_space.insert(free_chunk_index, reclaimed_memory);
                     break;
@@ -178,7 +183,7 @@ void OperatingSystem::removeProgram(const std::string &program_name) {
             }
             bool merged = false;
             Chunk& old_free_chunk = free_space.at(free_chunk_index);
-            const Chunk& new_free_chunk = free_space.get(free_chunk_index - 1);
+            const Chunk& new_free_chunk = free_space.get(free_chunk_index);
             // check if start page of the original free memory and end page of the reclaimed memory line up
             if(old_free_chunk.getStartPage() == new_free_chunk.getEndPage() + 1) {
                 // merge at the start, replacing original chunk starting point with the new chunk starting point
@@ -191,11 +196,11 @@ void OperatingSystem::removeProgram(const std::string &program_name) {
             }
             // if we merged two chunks we can delete the new chunk as the pages were absorbed by the old chunk
             if(merged) {
-                free_space.remove(free_chunk_index - 1);
+                free_space.remove(free_chunk_index);
             }
         }
 
-        int num_pages_reclaimed = used_chunk.getSize();
+        int num_pages_reclaimed = used_mem_chunk.getSize();
         used_space.remove(used_chunk_index);
         active_programs.erase(program_name);
         std::cout << "Program " << program_name << " successfully killed, " << num_pages_reclaimed <<
@@ -210,26 +215,14 @@ const int OperatingSystem::getNumFragments() const {
     return free_space.getSize();
 }
 
-void OperatingSystem::print() {
-    // reset all page values to 'Free'
-    memory_pages.assign(32, "Free");
-    for(int i = 0; i < used_space.getSize(); ++i) {
-        // loop through every used memory chunk
-        const Chunk& chunk = used_space.get(i);
-        for(int j = chunk.getStartPage(); j <= chunk.getEndPage(); ++j) {
-            // assign each page name to its corresponding page index(es)
-            memory_pages[j-1] = chunk.copyProgramName();
-        }
-    }
-    int display_index = 1;
-    for(const auto& program : memory_pages) {
-        std::cout << program;
-        if(display_index % 8 == 0) {
+void OperatingSystem::print() const {
+    for(unsigned int i = 0; i < memory_pages.size(); ++i) {
+        std::cout << memory_pages[i];
+        if((i + 1) % 8 == 0) {
             std::cout << std::endl;
         } else {
             std::cout << '\t';
         }
-        ++display_index;
     }
 }
 
